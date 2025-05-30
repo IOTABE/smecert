@@ -4,6 +4,8 @@ from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.utils import timezone
 from decimal import Decimal
+from django.core.validators import validate_email
+from django.core.exceptions import ValidationError
 
 class CustomUser(AbstractUser):
     ROLE_CHOICES = (
@@ -81,4 +83,31 @@ class Certificate(models.Model):
 
     class Meta:
         ordering = ['-issue_date', 'participant']
+
+
+class Participant(models.Model):
+    name = models.CharField(max_length=255, blank=False, null=False)
+    email = models.EmailField(unique=True, blank=False, null=False, validators=[validate_email])
+    cpf = models.CharField(max_length=14, blank=True, null=True, unique=True) # Ex: 111.222.333-44. unique=True se CPF deve ser único
+    # Adicione outros campos conforme necessário
+    # phone = models.CharField(max_length=20, blank=True, null=True)
+    # organization = models.CharField(max_length=255, blank=True, null=True)
+    # created_at = models.DateTimeField(auto_now_add=True)
+    # updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.name
+
+    def clean(self):
+        super().clean() # Chama a validação do modelo pai
+        if self.cpf:
+            cleaned_cpf = ''.join(filter(str.isdigit, self.cpf))
+            if len(cleaned_cpf) != 11 and len(cleaned_cpf) != 0 : # Permite CPF vazio se blank=True
+                # raise ValidationError({'cpf': 'CPF deve ter 11 dígitos.'}) # Ou normalize
+                pass 
+            self.cpf = cleaned_cpf # Normaliza o CPF antes de salvar
+
+    # class Meta:
+    #     verbose_name = "Participante"
+    #     verbose_name_plural = "Participantes"
 

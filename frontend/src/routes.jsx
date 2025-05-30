@@ -1,6 +1,6 @@
 // frontend/src/routes.js
 import React from 'react';
-import { Routes, Route, Outlet, Navigate , useLocation, Link} from 'react-router-dom';
+import { Routes, Route, Outlet, Navigate, useLocation, Link, NavLink } from 'react-router-dom'; // Adicionado NavLink
 import { useAuth } from './contexts/AuthContext'; 
 import LoginPage from './pages/auth/LoginPage'; 
 import RegisterPage from './pages/auth/RegisterPage';
@@ -8,30 +8,65 @@ import ParticipantCheckinPage from './pages/participant/ParticipantCheckinPage';
 import ParticipantCertificatesPage from './pages/participant/ParticipantCertificatesPage';
 import CertificateValidationPage from './pages/public/CertificateValidationPage';
 
+// --- Admin Page Imports ---
+import AdminDashboard from './pages/admin/AdminDashboard';
+import AdminEventsPage from './pages/admin/AdminEventsPage';
+import AdminParticipantsPage from './pages/admin/AdminParticipantsPage';
+import AdminAttendancePage from './pages/admin/AdminAttendancePage';
+
 // --- Layout Components ---
 const PublicLayout = () => <div className="min-h-screen bg-gray-100"><Outlet /></div>;
 const AuthLayout = () => <div className="min-h-screen bg-gradient-to-br from-blue-100 to-indigo-200 flex items-center justify-center p-4"><Outlet /></div>;
+
 const AdminLayout = () => {
     const { logout } = useAuth();
+    const navLinkClasses = ({ isActive }) => 
+        `block px-4 py-2 rounded-md hover:bg-red-600 transition-colors ${isActive ? 'bg-red-700 font-semibold' : 'bg-red-800'}`;
+
     return (
-        <div className="min-h-screen bg-gray-50">
+        <div className="min-h-screen flex flex-col">
             <nav className="bg-red-700 text-white p-4 shadow-md flex justify-between items-center">
-                <span className="font-bold text-lg">Painel Admin</span>
+                <Link to="/admin/dashboard" className="font-bold text-xl">Painel Admin</Link>
                 <button onClick={logout} className="bg-red-500 hover:bg-red-600 text-white py-1 px-3 rounded text-sm">Sair</button>
             </nav>
-            <main className="p-6"><Outlet /></main>
+            <div className="flex flex-1">
+                <aside className="w-64 bg-red-800 text-white p-4 space-y-2">
+                    <NavLink to="/admin/dashboard" className={navLinkClasses}>Dashboard</NavLink>
+                    <NavLink to="/admin/events" className={navLinkClasses}>Eventos</NavLink>
+                    <NavLink to="/admin/participants" className={navLinkClasses}>Participantes</NavLink>
+                    <NavLink to="/admin/attendance" className={navLinkClasses}>Frequência</NavLink>
+                </aside>
+                <main className="flex-1 p-6 bg-gray-100">
+                    <Outlet />
+                </main>
+            </div>
         </div>
     );
 };
+
 const ParticipantLayout = () => {
     const { logout } = useAuth();
+    // Adicione NavLink aqui também se desejar um estilo ativo para os links do participante
+    const navLinkClasses = ({ isActive }) => 
+        `block px-4 py-2 rounded-md hover:bg-green-600 transition-colors ${isActive ? 'bg-green-700 font-semibold' : ''}`;
+
     return (
-        <div className="min-h-screen bg-gray-50">
+        <div className="min-h-screen flex flex-col">
             <nav className="bg-green-700 text-white p-4 shadow-md flex justify-between items-center">
-                <span className="font-bold text-lg">Área do Participante</span>
+                <Link to="/participant/dashboard" className="font-bold text-xl">Área do Participante</Link>
                 <button onClick={logout} className="bg-green-500 hover:bg-green-600 text-white py-1 px-3 rounded text-sm">Sair</button>
             </nav>
-            <main className="p-6"><Outlet /></main>
+            <div className="flex flex-1">
+                {/* Exemplo de barra lateral para Participante, se necessário */}
+                {/* <aside className="w-64 bg-green-800 text-white p-4 space-y-2">
+                    <NavLink to="/participant/dashboard" className={navLinkClasses}>Meu Painel</NavLink>
+                    <NavLink to="/participant/events" className={navLinkClasses}>Meus Eventos</NavLink>
+                    <NavLink to="/participant/certificates" className={navLinkClasses}>Meus Certificados</NavLink>
+                </aside> */}
+                <main className="flex-1 p-6 bg-gray-100">
+                    <Outlet />
+                </main>
+            </div>
         </div>
     );
 }; 
@@ -52,13 +87,13 @@ const HomePage = () => (
     </div>
 );
 
-const AdminDashboard = () => <h2 className="text-2xl font-semibold">Dashboard Admin</h2>;
-const AdminEventsPage = () => <h2 className="text-2xl font-semibold">Gerenciar Eventos (Admin)</h2>;
-const AdminParticipantsPage = () => <h2 className="text-2xl font-semibold">Gerenciar Participantes (Admin)</h2>;
-const AdminAttendancePage = () => <h2 className="text-2xl font-semibold">Gerenciar Frequência (Admin)</h2>;
+// Removidos os componentes inline AdminDashboard, AdminEventsPage, etc., pois agora são importados.
+// const AdminDashboard = () => <h2 className="text-2xl font-semibold">Dashboard Admin</h2>;
+// ... e os outros
 
-const ParticipantDashboard = () => <h2 className="text-2xl font-semibold">Dashboard Participante</h2>;
-const ParticipantEventsPage = () => <h2 className="text-2xl font-semibold">Meus Eventos (Participante)</h2>;
+const ParticipantDashboard = () => <h2 className="text-2xl font-semibold">Dashboard Participante</h2>; // Considere mover para src/pages/participant
+const ParticipantEventsPage = () => <h2 className="text-2xl font-semibold">Meus Eventos (Participante)</h2>; // Considere mover para src/pages/participant
+
 
 // --- ProtectedRoute Component ---
 const ProtectedRoute = ({ children, allowedRoles }) => {
@@ -75,7 +110,6 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
 
     if (allowedRoles && allowedRoles.length > 0 && !allowedRoles.includes(user?.role)) {
         console.warn(`Acesso negado para o papel: ${user?.role}. Requerido: ${allowedRoles.join(' ou ')}`);
-        // Redireciona para o dashboard apropriado ou para a home se o papel for inesperado
         const redirectTo = user?.role === 'admin' ? '/admin/dashboard' : 
                            user?.role === 'participant' ? '/participant/dashboard' : '/';
         return <Navigate to={redirectTo} replace />;
@@ -99,7 +133,7 @@ const AppRoutes = () => {
                 <Route path="/validate-certificate" element={<CertificateValidationPage />} />
             </Route>
 
-            {/* Auth Routes - Redireciona com base no papel se já autenticado */}
+            {/* Auth Routes */}
             <Route element={<AuthLayout />}>
                 <Route 
                     path="/login" 
@@ -107,7 +141,7 @@ const AppRoutes = () => {
                         isAuthenticated ? (
                             user?.role === 'admin' ? <Navigate to="/admin/dashboard" replace /> :
                             user?.role === 'participant' ? <Navigate to="/participant/dashboard" replace /> :
-                            <Navigate to="/" replace /> // Fallback para HomePage
+                            <Navigate to="/" replace /> 
                         ) : (
                             <LoginPage />
                         )
@@ -119,7 +153,7 @@ const AppRoutes = () => {
                         isAuthenticated ? (
                             user?.role === 'admin' ? <Navigate to="/admin/dashboard" replace /> :
                             user?.role === 'participant' ? <Navigate to="/participant/dashboard" replace /> :
-                            <Navigate to="/" replace /> // Fallback para HomePage
+                            <Navigate to="/" replace />
                         ) : (
                             <RegisterPage />
                         )
@@ -140,7 +174,7 @@ const AppRoutes = () => {
                 <Route path="dashboard" element={<AdminDashboard />} />
                 <Route path="events" element={<AdminEventsPage />} />
                 <Route path="participants" element={<AdminParticipantsPage />} />
-                <Route path="attendance" element={<AdminAttendancePage />} />
+                <Route path="attendance" element={<AdminAttendancePage />} /> {/* Esta rota já existe */}
             </Route>
 
             {/* Participant Routes */}
@@ -153,8 +187,8 @@ const AppRoutes = () => {
                 )}
             >
                 <Route index element={<Navigate to="dashboard" replace />} />
-                <Route path="dashboard" element={<ParticipantDashboard />} />
-                <Route path="events" element={<ParticipantEventsPage />} />
+                <Route path="dashboard" element={<ParticipantDashboard />} /> {/* Considere mover para src/pages/participant */}
+                <Route path="events" element={<ParticipantEventsPage />} /> {/* Considere mover para src/pages/participant */}
                 <Route path="check-in" element={<ParticipantCheckinPage />} />
                 <Route path="certificates" element={<ParticipantCertificatesPage />} />
             </Route>

@@ -30,7 +30,7 @@ SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-o-ivaq7y9^2pv(
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DJANGO_DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = [] # Configure in production
+ALLOWED_HOSTS = ['0.0.0.0', '127.0.0.1', 'localhost', '10.30.91.71'] # Configure in production
 
 
 # Application definition

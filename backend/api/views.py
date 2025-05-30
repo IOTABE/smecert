@@ -10,8 +10,15 @@ from decimal import Decimal
 import io
 import os
 from django.http import HttpResponse
+import json
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt # Para desabilitar CSRF se for uma API pura e você gerencia tokens de outra forma
+from django.views.decorators.http import require_POST
+from django.db import transaction, IntegrityError
+from django.core.validators import validate_email # Para validação de email
+from django.core.exceptions import ValidationError as DjangoValidationError
 
-from .models import CustomUser, Event, Attendance, Certificate
+from .models import CustomUser, Event, Attendance, Certificate, Participant
 from .serializers import (
     CustomUserSerializer, EventSerializer, AttendanceSerializer, 
     CertificateSerializer, CheckinSerializer, CertificateValidationSerializer
@@ -253,4 +260,151 @@ class CertificateViewSet(viewsets.ReadOnlyModelViewSet):
             return Response(validation_data, status=status.HTTP_200_OK)
         except Certificate.DoesNotExist:
             return Response({'is_valid': False, 'error': 'Certificado inválido ou não encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+
+@csrf_exempt # Use com cautela. Se sua API usa autenticação baseada em token (ex: JWT), é comum.
+             # Se for uma aplicação web tradicional com sessões/cookies, você precisará lidar com CSRF.
+@require_POST # Garante que esta view só aceite requisições POST
+def import_participants_batch_view(request):
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"success": False, "message": "JSON inválido."}, status=400)
+
+    if not isinstance(data, list):
+        return JsonResponse({"success": False, "message": "Entrada inválida. Esperava uma lista de participantes."}, status=400)
+
+    imported_count = 0
+    failed_entries = []
+    success_entries = []
+
+    # Usar uma transação atômica garante que ou todos os participantes são salvos,
+    # ou nenhum é, se ocorrer um erro durante o processo de lote.
+    try:
+        with transaction.atomic():
+            for item_data in data:
+                try:
+                    cleaned_data = validate_participant_data(item_data)
+                    
+                    # Verificar duplicatas (exemplo: por email)
+                    # A cláusula unique_together ou unique=True no modelo pode lidar com isso no nível do BD,
+                    # mas verificar aqui permite um feedback mais granular.
+                    if Participant.objects.filter(email=cleaned_data['email']).exists():
+                        failed_entries.append({
+                            "data_provided": item_data,
+                            "status": "skipped",
+                            "reason": "Participante já existe (email duplicado)."
+                        })
+                        continue
+
+                    # Criar novo participante
+                    # participant = Participant.objects.create(**cleaned_data)
+                    # Ou, se você quiser instanciar e depois salvar (ex: para sinais)
+                    participant = Participant(
+                        name=cleaned_data['name'],
+                        email=cleaned_data['email'],
+                        cpf=cleaned_data.get('cpf')
+                        # Mapeie outros campos do cleaned_data para o seu modelo Participant
+                    )
+                    participant.save() # Isso pode levantar IntegrityError se houver constraints no BD
+
+                    success_entries.append({
+                        "email": cleaned_data['email'],
+                        "name": cleaned_data['name'],
+                        "id": participant.id, # ID do participante criado
+                        "status": "success"
+                    })
+                    imported_count += 1
+
+                except DjangoValidationError as e:
+                    failed_entries.append({
+                        "data_provided": item_data,
+                        "status": "error",
+                        "reason": "Dados inválidos.",
+                        "details": e.message_dict if hasattr(e, 'message_dict') else e.messages
+                    })
+                except IntegrityError as e: # Erro de integridade do BD (ex: unique constraint)
+                    # transaction.atomic() fará rollback se isso não for capturado e tratado aqui
+                    failed_entries.append({
+                        "data_provided": item_data,
+                        "status": "error",
+                        "reason": f"Erro de integridade no banco de dados: {str(e)}"
+                    })
+                except Exception as e: # Outras exceções inesperadas
+                    failed_entries.append({
+                        "data_provided": item_data,
+                        "status": "error",
+                        "reason": f"Erro inesperado no servidor: {str(e)}"
+                    })
+                    # Se uma exceção não tratada ocorrer aqui, transaction.atomic() fará rollback de tudo.
+
+            # Se chegarmos aqui e transaction.atomic() não foi interrompido por uma exceção não capturada,
+            # as alterações serão commitadas ao sair do bloco 'with'.
+
+    except Exception as e: # Erro durante o processamento do lote que pode ter causado rollback
+        return JsonResponse({
+            "success": False,
+            "message": f"Erro crítico durante a importação em lote: {str(e)}. Nenhuma alteração foi salva.",
+            "imported_count": 0,
+            "failed_entries": failed_entries, # Pode ter algumas falhas já coletadas
+            "success_entries": []
+        }, status=500)
+
+    message = f"{imported_count} participantes importados com sucesso."
+    if failed_entries:
+        message += f" {len(failed_entries)} participantes falharam, foram ignorados ou continham erros."
+
+    return JsonResponse({
+        "success": True,
+        "message": message,
+        "imported_count": imported_count,
+        "failed_entries": failed_entries,
+        "success_entries": success_entries
+    }, status=200)
+
+def validate_participant_data(data_item):
+    """
+    Valida os dados de um único participante.
+    Retorna um dicionário de dados limpos ou levanta DjangoValidationError.
+    """
+    cleaned_data = {}
+    errors = {}
+
+    # Nome
+    name = data_item.get('name')
+    if not name or not str(name).strip():
+        errors['name'] = 'Nome não pode ser vazio.'
+    else:
+        cleaned_data['name'] = str(name).strip()
+
+    # Email
+    email = data_item.get('email')
+    if not email:
+        errors['email'] = 'Email não pode ser vazio.'
+    else:
+        try:
+            validate_email(email)
+            cleaned_data['email'] = email
+        except DjangoValidationError:
+            errors['email'] = 'Formato de email inválido.'
+    
+    # CPF (opcional)
+    cpf = data_item.get('cpf')
+    if cpf:
+        cleaned_cpf = ''.join(filter(str.isdigit, str(cpf)))
+        # Adicione validação mais robusta de CPF se necessário
+        # if len(cleaned_cpf) != 11:
+        #     errors['cpf'] = 'CPF deve ter 11 dígitos.'
+        cleaned_data['cpf'] = cleaned_cpf
+    else:
+        cleaned_data['cpf'] = None
+        
+    # Adicione validação para outros campos aqui (ex: phone, organization)
+    # cleaned_data['phone'] = data_item.get('phone')
+    # cleaned_data['organization'] = data_item.get('organization')
+
+
+    if errors:
+        raise DjangoValidationError(errors)
+    
+    return cleaned_data
 
